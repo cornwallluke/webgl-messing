@@ -5,16 +5,16 @@
     <title>webgldemo</title>
     
     <style> 
-        html, body {
+        /* html, body {
             background-color: #000000;
             margin: 0px;
             overflow: hidden;
             width: 100%;
             height: 100%;
-        }
+        } */
         canvas {
-            width: 100%;
-            height: 100%;
+            width: 300px;
+            height: 300px;
         }
     </style>
     <!-- <script src="https://cdn.jsdelivr.net/npm/gl-matrix@3.3.0/cjs/index.js"></script> -->
@@ -28,13 +28,21 @@
 
     <script id="vs" type="x-shader/vertex"> 
         attribute vec3 position;
+        attribute vec3 normals;
 
         uniform mat4 vp;
-
+        uniform mat4 m;
+        uniform mat4 normm;
+        varying vec4 colour;
 
         void main() {
-
-            gl_Position = vp * vec4( position, 1.0 );
+            //light = vec3(10, 10, -20);
+            //surface = vec4(0.7,0.9,1,1);
+            
+            vec4 newpos = m * vec4( position, 1.0 );
+            vec3 norminterp = vec3(normm * vec4(normals, 0));
+            gl_Position = vp * newpos;
+            colour = vec4(0.7, 0.9, 1, 1)*clamp(dot(normalize(norminterp), normalize(vec3(10,10,-10)-position)),0.0,1.0)+vec4(0,0,0,1);
 
         }
 
@@ -42,16 +50,10 @@
 
     <script id="fs" type="x-shader/fragment"> 
 
-        uniform float time;
-        uniform vec2 resolution;
-
+        varying vec4 colour;
         void main( void ) {
 
-            vec2 position = - 1.0 + 2.0 * gl_FragCoord.xy / resolution.xy;
-            float red = abs( sin( position.x * position.y + time / 5.0 ) );
-            float green = abs( sin( position.x * position.y + time / 4.0 ) );
-            float blue = abs( sin( position.x * position.y + time / 3.0 ) );
-            gl_FragColor = vec4(0.7,0.9,1,1);
+            gl_FragColor = colour;
 
         }
 
@@ -106,18 +108,22 @@
             vertex_shader, fragment_shader, 
             currentProgram,
             vertex_position,
-            timeLocation,
+            normal_position,
             vplocation,
+            mlocation,
+            normmlocation,
             perspective,
             view,
             model,
-            vp, 
-            model,
-            resolutionLocation,
-            parameters = {  start_time  : new Date().getTime(), 
-                            time        : 0, 
+            vp,
+            parameters = {  start_time: new Date().getTime(),
+                            time: 0,
                             screenWidth : 0, 
-                            screenHeight: 0 };
+                            screenHeight: 0,
+                            alpha: 0,
+                            beta: 0,
+                            gamma: 0
+                        };
 
         init();
         animate();
@@ -146,34 +152,44 @@
 
             }
 
-            // Create Vertex buffer (2 triangles)
-
-
             
+            gl.enable(gl.DEPTH_TEST);
+
+            currentProgram = createProgram( vertex_shader, fragment_shader );
+            // console.log(currentProgram);
             buffer = gl.createBuffer();
             gl.bindBuffer( gl.ARRAY_BUFFER, buffer );
             gl.bufferData( gl.ARRAY_BUFFER, new Float32Array(cube), gl.STATIC_DRAW );
-
+            vertex_position = gl.getAttribLocation(currentProgram, "position")
+            gl.vertexAttribPointer( vertex_position, 3, gl.FLOAT, false, 0, 0 );
+            gl.enableVertexAttribArray( vertex_position );
+            
             normalbuffer = gl.createBuffer();
             gl.bindBuffer( gl.ARRAY_BUFFER, normalbuffer);
             gl.bufferData( gl.ARRAY_BUFFER, new Float32Array(normals), gl.STATIC_DRAW);
-
+            normal_position = gl.getAttribLocation(currentProgram, "normals")
+            gl.vertexAttribPointer( normal_position, 3, gl.FLOAT, false, 0, 0 );
+            gl.enableVertexAttribArray( normal_position );
+            
             indexbuf = gl.createBuffer();
             gl.bindBuffer( gl.ELEMENT_ARRAY_BUFFER, indexbuf);
             gl.bufferData( gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
 
             // Create Program
 
-            currentProgram = createProgram( vertex_shader, fragment_shader );
+            // currentProgram = createProgram( vertex_shader, fragment_shader );
             vplocation = gl.getUniformLocation( currentProgram, "vp");
-            timeLocation = gl.getUniformLocation( currentProgram, 'time' );
-            resolutionLocation = gl.getUniformLocation( currentProgram, 'resolution' );
+            mlocation = gl.getUniformLocation( currentProgram, "m");
+            normmlocation = gl.getUniformLocation( currentProgram, "normm");
+            // timeLocation = gl.getUniformLocation( currentProgram, 'time' );
+            // resolutionLocation = gl.getUniformLocation( currentProgram, 'resolution' );
 
         }
 
         function createProgram( vertex, fragment ) {
             
             var program = gl.createProgram();
+            
 
             var vs = createShader( vertex, gl.VERTEX_SHADER );
             var fs = createShader( '#ifdef GL_ES\nprecision highp float;\n#endif\n\n' + fragment, gl.FRAGMENT_SHADER );
@@ -266,26 +282,39 @@
             view = glMatrix.mat4.create();
             vp = glMatrix.mat4.create();
             model = glMatrix.mat4.create();
+            normm = glMatrix.mat4.create();
             glMatrix.mat4.perspective(perspective, 0.252680255142, parameters.screenWidth/parameters.screenHeight, 1, 500);
             glMatrix.mat4.targetTo(view, [0, 0,-20], [0,0,0],[0,1,0])  
             glMatrix.mat4.multiply(vp, perspective, view);
             glMatrix.mat4.rotateZ(model, model, parameters.time/1000);
-            glMatrix.mat4.multiply(vp, vp, model);
+            glMatrix.mat4.rotateY(model, model, parameters.time/800);
+            glMatrix.mat4.rotateX(model, model, parameters.time/600);
+            glMatrix.mat4.invert(normm, model);
+            glMatrix.mat4.transpose(normm, normm);
+            
+            // glMatrix.mat4.multiply(vp, vp, model);
             // Set values to program variables
             gl.uniformMatrix4fv( vplocation, false, vp);
+            gl.uniformMatrix4fv( mlocation, false, model);
+            gl.uniformMatrix4fv( normmlocation, false, normm);
+            
             // gl.uniformMatrix4fv( m)
-            gl.uniform1f( timeLocation, parameters.time / 1000 );
-            gl.uniform2f( resolutionLocation, parameters.screenWidth, parameters.screenHeight );
+            // gl.uniform1f( timeLocation, parameters.time / 1000 );
+            // gl.uniform2f( resolutionLocation, parameters.screenWidth, parameters.screenHeight );
             
             // Render geometry
 
-            gl.bindBuffer( gl.ARRAY_BUFFER, buffer );
+            // gl.bindBuffer( gl.ARRAY_BUFFER, buffer );
             
-            gl.vertexAttribPointer( vertex_position, 3, gl.FLOAT, false, 0, 0 );
-            gl.enableVertexAttribArray( vertex_position );
-            gl.bindBuffer( gl.ELEMENT_ARRAY_BUFFER, indexbuf);
+            
+           
+            // gl.bindBuffer( gl.ARRAY_BUFFER, normalbuffer)
+            // gl.vertexAttribPointer( normal_position, 3, gl.FLOAT, false, 0, 0 );
+            // gl.enableVertexAttribArray( normal_position );
+            // gl.bindBuffer( gl.ELEMENT_ARRAY_BUFFER, indexbuf);
+            
             gl.drawElements( gl.TRIANGLES, 36, gl.UNSIGNED_SHORT, 0 );
-            gl.disableVertexAttribArray( vertex_position );
+            
 
         }
 

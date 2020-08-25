@@ -3,10 +3,12 @@ app = Flask(__name__)
 
 # url_for("/", filename = "index.html")
 
-@app.route('/')
+@app.route('/test')
 def test():
     return render_template('index.html')
-
+@app.route('/')
+def inde():
+    return render_template('stablecube.html')
 # @app.route("/log", methods = ["POST"])
 # def log():
 #     if request.method == 'POST':
